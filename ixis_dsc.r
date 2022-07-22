@@ -364,11 +364,27 @@ excel_doc = createWorkbook(creator = ifelse(.Platform$OS.type == "windows"
 
 addWorksheet(excel_doc
              , 'Month_Device_Agg')
+
+# apply formatting to make document easier to read
+
+class(summary_0$sum_sessions) = 'comma'
+class(summary_0$max_sessions) = 'comma'
+class(summary_0$sum_transactions) = 'comma'
+class(summary_0$max_transactions) = 'comma'
+class(summary_0$sum_QTY) = 'comma'
+class(summary_0$max_QTY) = 'comma'
+s1 <- createStyle(numFmt = "#,##0.00")
+addStyle(excel_doc, 1, style = s1, rows = 1:(nrow(summary_0) + 1), cols = c(5, 9, 13), gridExpand = TRUE)
+s2 <- createStyle(numFmt = "#,##0.000")
+addStyle(excel_doc, 1, style = s2, rows = 1:(nrow(summary_0) + 1), cols = c(16, 17), gridExpand = TRUE)
 writeData(excel_doc
           , 'Month_Device_Agg'
           , summary_0)
 addWorksheet(excel_doc
              , 'Month_Over_Month')
+s3 <- createStyle(numFmt = "#,##0")
+addStyle(excel_doc, 2, style = s3, rows = 1:(nrow(summary_1) + 1), cols = c(4:7, 12:15, 20:23, 28:31, 36:39, 44:47: 64:67), gridExpand = TRUE)
+addStyle(excel_doc, 2, style = s2, rows = 1:(nrow(summary_0) + 1), cols = c(8:11, 24:27, 40:43), gridExpand = TRUE)
 writeData(excel_doc
           , 'Month_Over_Month'
           , summary_1)
