@@ -1,3 +1,6 @@
+# Looking at a retail website's GA data
+# author: Ben Armstrong (b.lee.armstrong@gmail.com)
+
 library(tidyverse)
 library(lubridate)
 library(summarytools)
@@ -69,7 +72,7 @@ sessions_by_browser_device = DataAnalyst_Ecom_data_sessionCounts %>%
             , mean_transactions = mean(transactions)
             , sum_QTY = sum(QTY)
             , mean_QTY = mean(QTY)
-            , mean_ETR = sum(transactions) / sum(sessions)) %>% 
+            , mean_ECR = sum(transactions) / sum(sessions)) %>% 
   arrange(desc(mean_sessions)) 
 
 head(sessions_by_browser_device)
@@ -78,9 +81,9 @@ head(sessions_by_browser_device)
 
 write_csv(sessions_by_browser_device, 'C:/Users/ben/Desktop/ixis/session_browser_summary.csv')
 
-# safari + mobile has the most sessions, but chrome desktop had the most transactions/quantities
+# safari + mobile has the most sessions, but chrome + desktop had the most transactions/quantities
 # similarly, safari + desktop has the second most transactions
-# chrome desktop has twice the ETR of Safari / Mobile
+# chrome + desktop has twice the ECR of Safari + mobile
 # are desktops the most active?
 
 device_check = DataAnalyst_Ecom_data_sessionCounts %>% 
@@ -91,12 +94,12 @@ device_check = DataAnalyst_Ecom_data_sessionCounts %>%
             , mean_transactions = mean(transactions)
             , sum_QTY = sum(QTY)
             , mean_QTY = mean(QTY)
-            , mean_ETR = sum(transactions) / sum(sessions)) %>% 
+            , mean_ECR = sum(transactions) / sum(sessions)) %>% 
   arrange(desc(sum_sessions))
 
 head(device_check)
 
-# desktop has a significantly higher ETR
+# desktop has a significantly higher ECR
 
 # how has device usage changed over time?
 
@@ -324,7 +327,7 @@ ggplot(data = trends_in_behavior, aes(x = dim_date)) +
             size = 1) +
   geom_line(aes(y = session_to_transaction_rate, color = 'Session to Transaction Rate'),
             size = 1) +
-  ggtitle('Abandonded Cart Rate, Session to Cart Rate, Session to Transaction_rate') +
+  ggtitle('Abandoned Cart Rate, Session to Cart Rate, Session to Transaction Rate') +
   xlab('Date') +
   ylab('Rate') +
   theme(plot.title = element_text(hjust = 0.5)) +
