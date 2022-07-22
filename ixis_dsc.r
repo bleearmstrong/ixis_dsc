@@ -35,8 +35,14 @@ validation_0 = DataAnalyst_Ecom_data_sessionCounts %>%
 # there are some cases where there are no sessions but transactions happened
 # this is probably bad data and these records will be removed from further analysis
 
+# are there cases where there are transactions, but fewer QTY?
+
+validation_1 = DataAnalyst_Ecom_data_sessionCounts %>% 
+  filter(QTY < transactions)
+
 DataAnalyst_Ecom_data_sessionCounts = DataAnalyst_Ecom_data_sessionCounts %>% 
-  filter(!((sessions == 0 & transactions > 0) | (sessions == 0 & QTY > 0)))
+  filter(!((sessions == 0 & transactions > 0) | (sessions == 0 & QTY > 0))) %>% 
+  filter(QTY >= transactions)
 
 # what are the most popular browsers, or browser device combos
 
