@@ -2,9 +2,17 @@ library(tidyverse)
 library(lubridate)
 library(summarytools)
 library(openxlsx)
+library(Cairo)
+
+# add Cairo for nicer plots
+CairoWin()
+
+# load data
 
 DataAnalyst_Ecom_data_addsToCart = read_csv("C:/Users/ben/Desktop/ixis/DataAnalyst_Ecom_data_addsToCart.csv")
 DataAnalyst_Ecom_data_sessionCounts = read_csv("C:/Users/ben/Desktop/ixis/DataAnalyst_Ecom_data_sessionCounts.csv")
+
+# take a quick peek at the data
 
 head(DataAnalyst_Ecom_data_addsToCart)
 head(DataAnalyst_Ecom_data_sessionCounts)
@@ -12,6 +20,7 @@ head(DataAnalyst_Ecom_data_sessionCounts)
 # do some descriptive stats to check for missing values and whatnot
 
 dfSummary(DataAnalyst_Ecom_data_sessionCounts)
+
 descr(DataAnalyst_Ecom_data_sessionCounts
       , stats = 'common')
 
@@ -23,16 +32,17 @@ validation_0 = DataAnalyst_Ecom_data_sessionCounts %>%
 # there are some cases where there are no sessions but transactions happened
 # this is probably bad data and these records will be removed from further analysis
 
+DataAnalyst_Ecom_data_sessionCounts = DataAnalyst_Ecom_data_sessionCounts %>% 
+  filter(!((sessions == 0 & transactions > 0) | (sessions == 0 & QTY > 0)))
+
 # what are the most popular browsers, or browser device combos
 
 popular_browsers = DataAnalyst_Ecom_data_sessionCounts %>% 
-  filter(!((sessions == 0 & transactions > 0) | (sessions == 0 & QTY > 0))) %>% # remove bad records
   count(dim_browser, sort = TRUE)
 
 head(popular_browsers)
 
 popular_browsers_devices = DataAnalyst_Ecom_data_sessionCounts %>% 
-  filter(!((sessions == 0 & transactions > 0) | (sessions == 0 & QTY > 0))) %>% # remove bad records
   count(dim_browser, dim_deviceCategory, sort = TRUE)
 
 head(popular_browsers_devices)
@@ -40,12 +50,72 @@ head(popular_browsers_devices)
 # and how do these relate to overall sessions, transactions, and quantities?
 
 sessions_by_browser = DataAnalyst_Ecom_data_sessionCounts %>% 
-  filter(!((sessions == 0 & transactions > 0) | (sessions == 0 & QTY > 0))) %>% # remove bad records
   group_by(dim_browser) %>% 
-  summarise()
+  summarise(sum_sessions = sum(sessions)
+            , mean_sessions = mean(sessions)
+            , sum_transactions = sum(transactions)
+            , mean_transactions = mean(transactions)
+            , sum_QTY = sum(QTY)
+            , mean_QTY = mean(QTY)) %>% 
+  arrange(desc(sum_sessions))
+
+head(sessions_by_browser)
+
+sessions_by_browser_device = DataAnalyst_Ecom_data_sessionCounts %>% 
+  group_by(dim_browser, dim_deviceCategory) %>% 
+  summarise(sum_sessions = sum(sessions)
+            , mean_sessions = mean(sessions)
+            , sum_transactions = sum(transactions)
+            , mean_transactions = mean(transactions)
+            , sum_QTY = sum(QTY)
+            , mean_QTY = mean(QTY)
+            , mean_ETR = sum(transactions) / sum(sessions)) %>% 
+  arrange(desc(mean_sessions)) 
+
+head(sessions_by_browser_device)
+
+# export this data for ease of presentation
+
+write_csv(sessions_by_browser_device, 'C:/Users/ben/Desktop/ixis/session_browser_summary.csv')
+
+# safari + mobile has the most sessions, but chrome desktop had the most transactions/quantities
+# similarly, safari + desktop has the second most transactions
+# chrome desktop has twice the ETR of Safari / Mobile
+# are desktops the most active?
+
+device_check = DataAnalyst_Ecom_data_sessionCounts %>% 
+  group_by(dim_deviceCategory) %>% 
+  summarise(sum_sessions = sum(sessions)
+            , mean_sessions = mean(sessions)
+            , sum_transactions = sum(transactions)
+            , mean_transactions = mean(transactions)
+            , sum_QTY = sum(QTY)
+            , mean_QTY = mean(QTY)
+            , mean_ETR = sum(transactions) / sum(sessions)) %>% 
+  arrange(desc(sum_sessions))
+
+head(device_check)
+
+# desktop has a significantly higher ETR
+
+# how has device usage changed over time?
+
+device_check_plot_data = DataAnalyst_Ecom_data_sessionCounts %>% 
+  mutate(dim_date_object = as_date(dim_date, format="%m/%d/%y")
+         , dim_year = year(dim_date_object)
+         , dim_month = month(dim_date_object)
+         , dim_date = make_date(dim_year, dim_month, 1)
+         , tally = 1)
+
+ggplot(data = device_check_plot_data, aes(x = dim_date, y = tally, fill = dim_deviceCategory)) +
+  geom_bar(stat = 'identity'
+           , position = 'fill')
+
+# type of device has been relatively steady
+
+# begin preparation of month / device aggregation dataset
 
 summary_0 = DataAnalyst_Ecom_data_sessionCounts %>% 
-  filter(!((sessions == 0 & transactions > 0) | (sessions == 0 & QTY > 0))) %>% # remove bad records
   mutate(dim_date_object = as_date(dim_date, format="%m/%d/%y")
          , ECR = transactions/sessions
          , dim_year = year(dim_date_object)
@@ -200,13 +270,88 @@ summary_1b = DataAnalyst_Ecom_data_addsToCart %>%
          , relative_diff_addsToCart = addsToCart - addsToCart_prior
          , absolute_diff_addsToCart = abs(relative_diff_addsToCart))
 
+# create filter dataset
+
+semi_join_data = summary_1a %>% 
+  ungroup() %>% 
+  distinct(dim_year, dim_month) %>% 
+  arrange(desc(dim_year), desc(dim_month)) %>% 
+  slice_head(n = 2)
+  
+
+# create month over month comparison
+
 summary_1 = summary_1a %>% 
   left_join(summary_1b, by = c('dim_year', 'dim_month')) %>% 
   arrange(dim_year
           , dim_month
-          , dim_deviceCategory)
+          , dim_deviceCategory) %>% 
+  semi_join(semi_join_data, by = c('dim_year', 'dim_month'))
+  
+
+head(summary_1)
+
+# how many shopping carts are abandoned? how many sessions generate cart adds?
+# and how many sessions lead to transactions?
+# we don't have device data for addsToCarts, so we won't be able to break it
+# down like that
+# also note that with limited data, these calculations are estimates:
+# it's possible a cart was added to in one month and purchased in a later month
+# this analysis would say that cart was abandoned. 
+
+trends_in_behavior = DataAnalyst_Ecom_data_sessionCounts %>% 
+  mutate(dim_date_object = as_date(dim_date, format="%m/%d/%y")
+         , dim_year = year(dim_date_object)
+         , dim_month = month(dim_date_object)) %>% 
+  group_by(dim_year, dim_month) %>% 
+  summarize(transactions_count = sum(transactions)
+            , sessions_count = sum(sessions)) %>% 
+  left_join(DataAnalyst_Ecom_data_addsToCart, by = c('dim_year', 'dim_month')) %>% 
+  mutate(abandon_rate = 1 - transactions_count / addsToCart
+         , session_to_cart_rate = addsToCart / sessions_count
+         , session_to_transaction_rate = transactions_count / sessions_count) %>% 
+  arrange(dim_year, dim_month) %>% 
+  mutate(dim_day = 1
+         , dim_date = make_date(dim_year, dim_month, dim_day))
+
+head(trends_in_behavior)
+
+# are there trends in these rates?
+
+ggplot(data = trends_in_behavior, aes(x = dim_date)) +
+  geom_line(aes(y = abandon_rate, color = 'Abandon Rate'), size = 1) +
+  geom_line(aes(y = session_to_cart_rate, color = 'Sessions to Cart Rate'),
+            size = 1) +
+  geom_line(aes(y = session_to_transaction_rate, color = 'Session to Transaction Rate'),
+            size = 1) +
+  ggtitle('Abandonded Cart Rate, Session to Cart Rate, Session to Transaction_rate') +
+  xlab('Date') +
+  ylab('Rate') +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(
+    values = c(
+      'Abandon Rate' = 'darkblue'
+      ,
+      'Sessions to Cart Rate' = 'red'
+      ,
+      'Session to Transaction Rate' = 'green'
+    )
+  ) +
+  labs(color = 'Behaviors') 
+
+# ECR is steady
+# abandon rate is decreasing
+# sessions to cart rate is decreasing
+
+# clean up this dataset for export
+
+trends_in_behavior_clean = trends_in_behavior %>% 
+  select(-dim_date, -dim_day)
 
 # write out results to an xlsx file
+# NOTE: this section will overwrite the previously existing workbook
+# if it exists
+
 excel_doc = createWorkbook(creator = ifelse(.Platform$OS.type == "windows"
                                             , Sys.getenv("USERNAME")
                                             , Sys.getenv("USER"))
@@ -224,66 +369,138 @@ addWorksheet(excel_doc
 writeData(excel_doc
           , 'Month_Over_Month'
           , summary_1)
-
+addWorksheet(excel_doc
+             , 'Behavior_Rates')
+writeData(excel_doc
+          , 'Behavior_Rates'
+          , trends_in_behavior_clean)
+addWorksheet(excel_doc
+             , 'Sessions_by_browser_device')
+writeData(excel_doc
+          , 'Sessions_by_browser_device'
+          , sessions_by_browser_device)
 saveWorkbook(excel_doc
              , 'C:/Users/ben/Desktop/ixis/ixis_data_science_challenge.xlsx'
              , overwrite = TRUE)
 
-# to visualize this data, we'll add a date column to the previous dataset
+# to visualize this data (the month device aggregation), we'll add a date column
+# to the previous dataset
 
 visualization_data_0 = summary_1 %>% 
   mutate(dim_day = 1
          , dim_date = make_date(dim_year, dim_month, dim_day))
 
-ggplot(data=visualization_data_0, aes(x = dim_date, y = mean_sessions, group = dim_deviceCategory)) +
-  geom_line(aes(color = dim_deviceCategory)) +
+ggplot(data = visualization_data_0,
+       aes(x = dim_date, y = mean_sessions, group = dim_deviceCategory)) +
+  geom_line(aes(color = dim_deviceCategory), size = 1) +
   geom_point(aes(color = dim_deviceCategory)) +
   ggtitle('Mean Sessions') +
   xlab('Date') +
   ylab('Sessions') +
   theme(plot.title = element_text(hjust = 0.5)) 
-ggplot(data=visualization_data_0, aes(x = dim_date, y = sum_sessions, group = dim_deviceCategory)) +
-  geom_line(aes(color = dim_deviceCategory)) +
+ggplot(data = visualization_data_0,
+       aes(x = dim_date, y = sum_sessions, group = dim_deviceCategory)) +
+  geom_line(aes(color = dim_deviceCategory), size = 1) +
   geom_point(aes(color = dim_deviceCategory)) +
   ggtitle('Sum Sessions') +
   xlab('Date') +
   ylab('Sessions') +
-  theme(plot.title = element_text(hjust = 0.5)) 
-ggplot(data=visualization_data_0, aes(x = dim_date, y = mean_transactions, group = dim_deviceCategory)) +
-  geom_line(aes(color = dim_deviceCategory)) +
+  theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = visualization_data_0,
+       aes(x = dim_date, y = mean_transactions, group = dim_deviceCategory)) +
+  geom_line(aes(color = dim_deviceCategory), size = 1) +
   geom_point(aes(color = dim_deviceCategory)) +
   ggtitle('Mean Transactions') +
   xlab('Date') +
   ylab('Transactions') +
-  theme(plot.title = element_text(hjust = 0.5)) 
-ggplot(data=visualization_data_0, aes(x = dim_date, y = sum_transactions, group = dim_deviceCategory)) +
-  geom_line(aes(color = dim_deviceCategory)) +
+  theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = visualization_data_0,
+       aes(x = dim_date, y = sum_transactions, group = dim_deviceCategory)) +
+  geom_line(aes(color = dim_deviceCategory), size = 1) +
   geom_point(aes(color = dim_deviceCategory)) +
   ggtitle('Sum Transactions') +
   xlab('Date') +
   ylab('Transactions') +
-  theme(plot.title = element_text(hjust = 0.5)) 
-ggplot(data=visualization_data_0, aes(x = dim_date, y = mean_QTY, group = dim_deviceCategory)) +
-  geom_line(aes(color = dim_deviceCategory)) +
+  theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = visualization_data_0, aes(x = dim_date, y = mean_QTY, group = dim_deviceCategory)) +
+  geom_line(aes(color = dim_deviceCategory), size = 1) +
   geom_point(aes(color = dim_deviceCategory)) +
   ggtitle('Mean QTY') +
   xlab('Date') +
   ylab('QTY') +
-  theme(plot.title = element_text(hjust = 0.5)) 
-ggplot(data=visualization_data_0, aes(x = dim_date, y = sum_QTY, group = dim_deviceCategory)) +
-  geom_line(aes(color = dim_deviceCategory)) +
+  theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = visualization_data_0, aes(x = dim_date, y = sum_QTY, group = dim_deviceCategory)) +
+  geom_line(aes(color = dim_deviceCategory), size = 1) +
   geom_point(aes(color = dim_deviceCategory)) +
   ggtitle('Sum QTY') +
   xlab('Date') +
   ylab('QTY') +
-  theme(plot.title = element_text(hjust = 0.5)) 
-ggplot(data=visualization_data_0, aes(x = dim_date, y = mean_ECR, group = dim_deviceCategory)) +
-  geom_line(aes(color = dim_deviceCategory)) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# look at mean ECR by device
+# add a crude trendline
+
+
+ggplot(data = visualization_data_0, aes(x = dim_date, y = mean_ECR, group = dim_deviceCategory)) +
+  geom_line(aes(color = dim_deviceCategory), size = 1) +
   geom_point(aes(color = dim_deviceCategory)) +
-  ggtitle('Mean ECR') +
+  stat_smooth(
+    method = 'lm',
+    geom = 'line',
+    alpha = .5,
+    se = FALSE,
+    size = .5
+  ) +
+  ggtitle('Mean ECR by Device Type') +
   xlab('Date') +
   ylab('ECR') +
-  theme(plot.title = element_text(hjust = 0.5)) 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(color = 'Device Type') 
+
+# results of this plot indicate that tablet ECR is not increasing while other
+# devices are; is overall tablet usage increasing?
+
+tablet_usage = DataAnalyst_Ecom_data_sessionCounts %>%
+  mutate(dim_date_object = as_date(dim_date, format="%m/%d/%y")
+         , dim_year = year(dim_date_object)
+         , dim_month = month(dim_date_object)
+         , tablet_binary = ifelse(dim_deviceCategory == 'tablet', 1, 0)) %>% 
+  select(dim_deviceCategory, tablet_binary, dim_year, dim_month) %>% 
+  group_by(dim_year, dim_month) %>% 
+  summarize(tablet_usage = sum(tablet_binary)) %>% 
+  arrange(dim_year, dim_month) %>% 
+  mutate(dim_day = 1
+         , dim_date_object = make_date(dim_year, dim_month, dim_day))
+
+head(tablet_usage)
+
+ggplot(data = tablet_usage, aes(x = dim_date_object, y = tablet_usage)) +
+  geom_line()
+
+# check against all types
+
+all_devices = DataAnalyst_Ecom_data_sessionCounts %>%
+  mutate(dim_date_object = as_date(dim_date, format="%m/%d/%y")
+         , dim_year = year(dim_date_object)
+         , dim_month = month(dim_date_object)) %>% 
+  group_by(dim_year, dim_month) %>% 
+  count(dim_deviceCategory) %>% 
+  mutate(dim_day = 1
+         , dim_date_object = make_date(dim_year, dim_month, dim_day)) %>% 
+  rename(count = n)
+
+ggplot(data = all_devices,
+       aes(x = dim_date_object, y = count, group = dim_deviceCategory)) +
+  geom_line(aes(color = dim_deviceCategory), size = 1) +
+  geom_point(aes(color = dim_deviceCategory)) +
+  ggtitle('Device Type Usage') +
+  xlab('Date') +
+  ylab('Count') +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(color = 'Device Type') 
+
+# while a lower overall volume, it has grown at roughly the same pace as the
+# other devices
 
 # to look at addsToCart data, we'll look at the previously created dataset,
 # since it's not broken down by device
@@ -293,10 +510,17 @@ visualization_data_1 = summary_1b %>%
          , dim_date = make_date(dim_year, dim_month, dim_day))
 
 ggplot(data = visualization_data_1, aes(x = dim_date)) +
-  geom_line(aes(y = addsToCart), color = 'red') +
-  geom_line(aes(y = absolute_diff_addsToCart), color = 'blue') +
+  geom_line(aes(y = addsToCart, color = 'Adds to Cart'), size = 1) +
+  geom_line(
+    aes(y = absolute_diff_addsToCart, color = 'Absolute Difference from Previous Month')
+    , size = 1
+  ) +
   ggtitle('addsToCart and absolute difference in addsToCart Month over Month') +
   xlab('Date') +
   ylab('Count') +
-  theme(plot.title = element_text(hjust = 0.5)) 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values = c(
+    'Adds to Cart' = 'darkblue'
+    , 'Absolute Difference from Previous Month' = 'red'
+  ))
 
